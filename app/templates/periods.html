@@ -1,0 +1,81 @@
+{% extends "base.html" %}{% block period_content %}<div class="sheet-layout">
+<section class="panel sheet">
+  <header><h2>工资期间分摊封存</h2><span>同版页面 / 导出</span></header>
+  <div class="button-row">
+    <button id="period-import" data-url="/api/periods/import">导入跨月班次样例</button>
+    <button id="period-supplement" data-url="/api/periods/supplement">提交截止后补卡样例</button>
+  </div>
+  <div class="scroll">
+    <table class="ledger">
+      <thead><tr><th>期间</th><th>状态</th><th>快照版本</th><th>截止日(次月)</th><th>片段数</th><th>应发</th><th>调整</th><th>应付</th><th>发布阻断</th><th>操作</th></tr></thead>
+      <tbody>
+      {% for l in ledgers %}
+        <tr class="{{'selected-row' if ledger and l.period==ledger.period else ''}}">
+          <td tabindex="0"><a href="/periods?period={{l.period}}">{{l.period}}</a></td>
+          <td><span class="state {{'holiday' if l.status=='sealed' else 'regular'}}">{{'已封存' if l.status=='sealed' else '未封存'}}</span></td>
+          <td class="num">{{l.version}}</td>
+          <td class="num">{{l.body.cutoff_day if l.body else '—'}}</td>
+          <td class="num">{{l.body.fragments|length if l.body else 0}}</td>
+          <td class="num">{{l.body.business.total if l.body else '—'}}</td>
+          <td class="num">{{l.body.business.adjustment_total if l.body else '—'}}</td>
+          <td class="num">{{l.body.business.payable if l.body else '—'}}</td>
+          <td>{{l.body.blockers|length if l.body else 0}}</td>
+          <td>
+            <a href="/api/periods/{{l.period}}/export.csv">导出</a>
+            {% if l.status!='sealed' %}<button class="period-seal" data-period="{{l.period}}">封存</button>{% endif %}
+          </td>
+        </tr>
+      {% else %}
+        <tr><td colspan="10">尚无期间数据，点击“导入跨月班次样例”生成第一版分摊结果。</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% if ledger and ledger.body %}
+  <header style="margin-top:18px"><h2>期间 {{ledger.period}} · 原始打卡 → 片段 → 倍率 → 应付</h2><span>v{{ledger.version}} {{ledger.status}}</span></header>
+  <p class="hash">{{ledger.body_hash}}</p>
+  <div class="scroll">
+    <table class="ledger">
+      <thead><tr><th>#</th><th>员工</th><th>班次(串联)</th><th>来源行</th><th>日历日</th><th>起止</th><th>分钟</th><th>倍率</th><th>分类</th><th>金额</th></tr></thead>
+      <tbody>
+      {% for f in ledger.body.fragments %}
+        <tr><td class="rownum">{{loop.index}}</td><td tabindex="0">{{f.employee}}</td><td>{{f.id}}</td><td>{{f.line}}</td><td>{{f.calendar_day}}</td><td>{{f.start[11:16]}}–{{f.end[11:16]}}</td><td class="num">{{f.minutes}}</td><td class="num">{{f.multiplier}}</td><td><span class="state {{f.code|lower}}">{{f.code}}</span></td><td class="num">{{f.amount}}</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+</section>
+<section class="panel side">
+  <header><h2>封存校验</h2></header>
+  {% if ledger %}
+  <p class="hash">{{ledger.body_hash}}</p>
+  <dl>
+    <dt>状态</dt><dd>{{'已封存' if ledger.status=='sealed' else '未封存'}}</dd>
+    <dt>快照版本</dt><dd>{{ledger.version}}</dd>
+    <dt>有效分钟</dt><dd>{{ledger.body.business.minutes if ledger.body else '—'}}</dd>
+    <dt>应发 CNY</dt><dd>{{ledger.body.business.total if ledger.body else '—'}}</dd>
+    <dt>实发 CNY</dt><dd>{{ledger.body.business.paid if ledger.body else '—'}}</dd>
+    <dt>差额 CNY</dt><dd>{{ledger.body.business.difference if ledger.body else '—'}}</dd>
+    <dt>调整 CNY</dt><dd>{{ledger.body.business.adjustment_total if ledger.body else '—'}}</dd>
+    <dt>应付 CNY</dt><dd>{{ledger.body.business.payable if ledger.body else '—'}}</dd>
+  </dl>
+  <header><h2>跨期班次</h2></header>
+  {% for v in (ledger.body.shifts if ledger.body else []) %}
+  <p>{{v.shift_id}} · {{'完整' if v.complete else '缺卡'}}<br><small>归属 {{v.home_period}} → 片段期间 {{v.periods|join(', ')}}</small></p>
+  {% endfor %}
+  <header><h2>封存期调整</h2></header>
+  {% for a in (ledger.body.adjustments if ledger.body else []) %}
+  <p>{{a.shift_id}}<br><small>{{a.source_period}} 补卡差额 {{a.delta_amount}}（{{a.reason}}）</small></p>
+  {% else %}<p><small>无</small></p>{% endfor %}
+  <header><h2>发布阻断</h2></header>
+  {% for b in (ledger.body.blockers if ledger.body else []) %}
+  <p class="blocker">{{b.code}} · {{b.message}}</p>
+  {% else %}<p><small>无阻断，可封存</small></p>{% endfor %}
+  {% else %}<p>选择左侧期间查看快照。</p>{% endif %}
+  <header><h2>异常记录</h2></header>
+  <div class="scroll"><table class="ledger"><thead><tr><th>来源行</th><th>业务ID</th><th>原因</th></tr></thead><tbody>
+  {% if ledger and ledger.body %}{% for q in ledger.body.quarantine %}<tr><td class="rownum">{{q.line}}</td><td tabindex="0">{{q.id}}</td><td class="error">{{q.code}}</td></tr>{% else %}<tr><td colspan="3">无异常记录</td></tr>{% endfor %}{% else %}<tr><td colspan="3">无异常记录</td></tr>{% endif %}
+  </tbody></table></div>
+</section>
+</div>{% endblock %}

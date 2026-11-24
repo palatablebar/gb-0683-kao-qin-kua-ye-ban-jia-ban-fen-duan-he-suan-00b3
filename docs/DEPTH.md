@@ -13,6 +13,7 @@
 | M5 工时切段 | 查看并复算工时切段 | `/api/m5_calculate` | `app/modules/m5_calculate/rules.py` | `tests/test_calculate.py` |
 | M6 薪资对账 | 查看并复算薪资对账 | `/api/m6_reconcile` | `app/modules/m6_reconcile/compare.py` | `tests/test_reconcile.py` |
 | M7 周期归档 | 查看并复算周期归档 | `/api/m7_archive` | `app/modules/m7_archive/export_out.py` | `tests/test_archive.py` |
+| P8 期间分摊封存 | 导入/补卡、按期封存与调整 | `/api/periods` | `app/periods/service.py`、`app/period_store.py` | `tests/test_periods.py` |
 
 ## 陷阱登记
 
@@ -31,6 +32,16 @@
 | TRAP-26 | 旧版本复核 | 覆盖新结论 | 事务条件更新 | `app/store.py` | `tests/test_archive.py::test_stale_review` |
 | TRAP-23 | 休息与跨夜端点 | 重复或漏计 | 半开区间切片 | `app/modules/m4_segments/rules.py` | `tests/test_segments.py::test_break_removed` |
 | TRAP-19 | 假日与周末重叠 | 费率相加 | 假日优先 | `app/modules/m5_calculate/rules.py` | `tests/test_calculate.py::test_holiday_overrides_rest` |
+| TRAP-31 | 跨月夜班整班归属 | 整班挂起始月或只结前半段 | 午夜切段、同 shift_id 串联两期 | `app/periods/service.py::build_snapshots` | `tests/test_periods.py::test_cross_month_shift_splits_at_midnight_into_two_periods` |
+| TRAP-32 | 截止后补卡改写封存期 | 覆盖已封存工资单 | 封存期禁写，差额调整转下一未封存期 | `app/periods/service.py::recompute`、`app/period_store.py::upsert_snapshot` | `tests/test_periods.py::test_supplement_keeps_sealed_period_immutable` |
+| TRAP-33 | 同一补卡重跑 | 重复生成调整 | 批次指纹 + (batch,期间,班次) 幂等 | `app/period_store.py::adjustment_exists` | `tests/test_periods.py::test_same_supplement_rerun_creates_no_duplicate_adjustment` |
+| TRAP-34 | 缺片段/对账不平仍发布 | 带病封存 | 阻断清单拦截封存 | `app/periods/service.py::seal` | `tests/test_periods.py::test_missing_fragment_blocks_release` |
+| TRAP-35 | 重算中途失败 | 半新半旧快照 | 同事务写入，异常整体回滚 | `app/periods/service.py::submit` | `tests/test_periods.py::test_recompute_failure_restores_old_version` |
+| TRAP-36 | 页面与导出口径不一 | 两套结果 | 同读存储快照与 body_hash | `app/periods/export.py` | `tests/test_periods.py::test_export_uses_same_stored_snapshot_and_hash` |
+
+## 期间账存储
+
+`period_batches` 保存每批原始字节（base64）与计数；`period_punches` 逐条留痕（accepted/duplicate/isolated）；`period_ledgers` 按期保存快照、版本号与 `body_hash`，sealed 行在数据层拒绝改写；`period_adjustments` 保存封存期补卡差额，`digest` 唯一约束兜底幂等。
 
 ## 对账规则
 
